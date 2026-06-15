@@ -26,6 +26,7 @@ export default async function handler(req, res) {
       titre:  page.properties["Section"]?.title?.[0]?.plain_text ?? "Sans titre",
       phase:  page.properties["Phase"]?.select?.name ?? "Autre",
       statut: page.properties["Statut"]?.select?.name ?? "À faire",
+      note:   page.properties["Note du lecteur"]?.rich_text?.[0]?.plain_text ?? "",
     }));
 
     res.setHeader("Cache-Control", "s-maxage=120, stale-while-revalidate");

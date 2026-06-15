@@ -1,7 +1,6 @@
 import { useState, useEffect, useCallback } from "react";
 import Layout from "../components/Layout";
 
-// ─── Couleurs par phase ───────────────────────────────────────────────────────
 const PHASE_COLORS = {
   "Phase 1": { color: "#60a5fa", soft: "rgba(96,165,250,0.12)" },
   "Phase 2": { color: "var(--green)", soft: "var(--green-soft)" },
@@ -20,15 +19,16 @@ export default function Bible() {
   const [error,       setError]       = useState(null);
   const [updatingIds, setUpdatingIds] = useState(new Set());
   const [openPhases,  setOpenPhases]  = useState({});
+  const [openNoteId,  setOpenNoteId]  = useState(null);
+  const [noteText,    setNoteText]    = useState("");
+  const [savingNote,  setSavingNote]  = useState(false);
 
-  // ── Chargement initial + polling (2 min) ──────────────────────────────────
   const fetchSections = useCallback(async () => {
     try {
       const res = await fetch("/api/sections");
       if (!res.ok) throw new Error(await res.text());
       const { sections } = await res.json();
       setSections(sections);
-      // Ouvrir la première phase par défaut
       setOpenPhases((prev) => {
         if (Object.keys(prev).length > 0) return prev;
         const firstPhase = sections[0]?.phase;
@@ -47,16 +47,12 @@ export default function Bible() {
     return () => clearInterval(interval);
   }, [fetchSections]);
 
-  // ── Toggle statut ─────────────────────────────────────────────────────────
   const handleToggle = async (section) => {
     const nextStatut = STATUTS[(STATUTS.indexOf(section.statut) + 1) % STATUTS.length];
-
-    // Optimistic update
     setSections((prev) =>
       prev.map((s) => (s.id === section.id ? { ...s, statut: nextStatut } : s))
     );
     setUpdatingIds((prev) => new Set([...prev, section.id]));
-
     try {
       const res = await fetch("/api/update", {
         method: "POST",
@@ -65,7 +61,6 @@ export default function Bible() {
       });
       if (!res.ok) throw new Error();
     } catch {
-      // Rollback
       setSections((prev) =>
         prev.map((s) => (s.id === section.id ? { ...s, statut: section.statut } : s))
       );
@@ -78,7 +73,30 @@ export default function Bible() {
     }
   };
 
-  // ── Groupement par phase ──────────────────────────────────────────────────
+  const openNote = (section) => {
+    setNoteText(section.note ?? "");
+    setOpenNoteId(section.id);
+  };
+
+  const closeNote = () => setOpenNoteId(null);
+
+  const saveNote = async (sectionId) => {
+    setSavingNote(true);
+    try {
+      await fetch("/api/note", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ id: sectionId, note: noteText }),
+      });
+      setSections((prev) =>
+        prev.map((s) => (s.id === sectionId ? { ...s, note: noteText } : s))
+      );
+      setOpenNoteId(null);
+    } finally {
+      setSavingNote(false);
+    }
+  };
+
   const grouped = sections.reduce((acc, s) => {
     if (!acc[s.phase]) acc[s.phase] = [];
     acc[s.phase].push(s);
@@ -86,8 +104,6 @@ export default function Bible() {
   }, {});
 
   const phases = Object.keys(grouped);
-
-  // ── Progression globale ───────────────────────────────────────────────────
   const total    = sections.length;
   const termines = sections.filter((s) => s.statut === "Terminé").length;
   const pct      = total > 0 ? Math.round((termines / total) * 100) : 0;
@@ -97,7 +113,6 @@ export default function Bible() {
       <div className="page">
         <div className="container" style={{ paddingTop: 24 }}>
 
-          {/* Progression globale */}
           {!loading && total > 0 && (
             <div className="card fade-up" style={{ marginBottom: 20 }}>
               <div style={{ display: "flex", justifyContent: "space-between", alignItems: "baseline", marginBottom: 10 }}>
@@ -115,30 +130,22 @@ export default function Bible() {
             </div>
           )}
 
-          {/* Erreur */}
           {error && (
             <div style={{
-              background: "var(--red-soft)",
-              border: "1px solid rgba(248,113,113,0.2)",
-              borderRadius: "var(--radius-sm)",
-              padding: "12px 14px",
-              fontSize: 13,
-              color: "var(--red)",
-              marginBottom: 16,
+              background: "var(--red-soft)", border: "1px solid rgba(248,113,113,0.2)",
+              borderRadius: "var(--radius-sm)", padding: "12px 14px",
+              fontSize: 13, color: "var(--red)", marginBottom: 16,
             }}>
               ⚠️ {error}
             </div>
           )}
 
-          {/* Squelette de chargement */}
           {loading && (
             <div style={{ display: "flex", flexDirection: "column", gap: 10 }}>
               {[...Array(4)].map((_, i) => (
                 <div key={i} style={{
-                  height: 56,
-                  background: "var(--bg-card)",
-                  border: "1px solid var(--border)",
-                  borderRadius: "var(--radius)",
+                  height: 56, background: "var(--bg-card)",
+                  border: "1px solid var(--border)", borderRadius: "var(--radius)",
                   animation: "pulse 1.4s ease-in-out infinite",
                   animationDelay: `${i * 150}ms`,
                 }} />
@@ -146,34 +153,23 @@ export default function Bible() {
             </div>
           )}
 
-          {/* Phases */}
           {!loading && phases.map((phase, i) => {
             const { color, soft } = PHASE_COLORS[phase] ?? DEFAULT_COLOR;
-            const items   = grouped[phase];
-            const done    = items.filter((s) => s.statut === "Terminé").length;
-            const isOpen  = !!openPhases[phase];
+            const items  = grouped[phase];
+            const done   = items.filter((s) => s.statut === "Terminé").length;
+            const isOpen = !!openPhases[phase];
 
             return (
-              <div
-                key={phase}
-                className="fade-up"
-                style={{ marginBottom: 10, animationDelay: `${i * 60}ms` }}
-              >
-                {/* En-tête phase (cliquable) */}
+              <div key={phase} className="fade-up" style={{ marginBottom: 10, animationDelay: `${i * 60}ms` }}>
                 <button
                   onClick={() => setOpenPhases((p) => ({ ...p, [phase]: !isOpen }))}
                   style={{
-                    width: "100%",
-                    display: "flex",
-                    alignItems: "center",
-                    justifyContent: "space-between",
-                    padding: "14px 16px",
+                    width: "100%", display: "flex", alignItems: "center",
+                    justifyContent: "space-between", padding: "14px 16px",
                     background: isOpen ? soft : "var(--bg-card)",
-                    border: "1px solid",
-                    borderColor: isOpen ? color : "var(--border)",
+                    border: "1px solid", borderColor: isOpen ? color : "var(--border)",
                     borderRadius: isOpen ? "var(--radius) var(--radius) 0 0" : "var(--radius)",
-                    transition: "all 0.2s",
-                    textAlign: "left",
+                    transition: "all 0.2s", textAlign: "left",
                   }}
                 >
                   <div style={{ display: "flex", alignItems: "center", gap: 10 }}>
@@ -181,72 +177,123 @@ export default function Bible() {
                     <span style={{ fontWeight: 600, fontSize: 15 }}>{phase}</span>
                   </div>
                   <div style={{ display: "flex", alignItems: "center", gap: 10 }}>
-                    <span style={{ fontSize: 12, color: "var(--text-muted)" }}>
-                      {done}/{items.length}
-                    </span>
-                    <span style={{ fontSize: 12, color: "var(--text-muted)", transition: "transform 0.2s", display: "inline-block", transform: isOpen ? "rotate(180deg)" : "none" }}>
-                      ▾
-                    </span>
+                    <span style={{ fontSize: 12, color: "var(--text-muted)" }}>{done}/{items.length}</span>
+                    <span style={{ fontSize: 12, color: "var(--text-muted)", transition: "transform 0.2s", display: "inline-block", transform: isOpen ? "rotate(180deg)" : "none" }}>▾</span>
                   </div>
                 </button>
 
-                {/* Sections */}
                 {isOpen && (
                   <div style={{
-                    background: "var(--bg-card)",
-                    border: "1px solid var(--border)",
-                    borderTop: "none",
-                    borderRadius: "0 0 var(--radius) var(--radius)",
+                    background: "var(--bg-card)", border: "1px solid var(--border)",
+                    borderTop: "none", borderRadius: "0 0 var(--radius) var(--radius)",
                     overflow: "hidden",
                   }}>
                     {items.map((section, j) => (
-                      <button
-                        key={section.id}
-                        onClick={() => handleToggle(section)}
-                        disabled={updatingIds.has(section.id)}
-                        style={{
-                          width: "100%",
-                          display: "flex",
-                          alignItems: "center",
-                          gap: 12,
-                          padding: "12px 16px",
-                          textAlign: "left",
-                          borderTop: j > 0 ? "1px solid var(--border)" : "none",
-                          transition: "background 0.15s",
+                      <div key={section.id} style={{ borderTop: j > 0 ? "1px solid var(--border)" : "none" }}>
+                        {/* Ligne principale */}
+                        <div style={{
+                          display: "flex", alignItems: "center",
                           opacity: updatingIds.has(section.id) ? 0.5 : 1,
-                          background: "transparent",
-                        }}
-                      >
-                        <span style={{
-                          fontSize: 16,
-                          color: section.statut === "Terminé" ? color : "var(--text-muted)",
-                          flexShrink: 0,
-                          transition: "color 0.2s",
+                          transition: "opacity 0.15s",
                         }}>
-                          {STATUT_ICONS[section.statut] ?? "○"}
-                        </span>
-                        <span style={{
-                          fontSize: 14,
-                          flex: 1,
-                          textDecoration: section.statut === "Terminé" ? "line-through" : "none",
-                          color: section.statut === "Terminé" ? "var(--text-muted)" : "var(--text)",
-                          transition: "all 0.2s",
-                        }}>
-                          {section.titre}
-                        </span>
-                        {section.statut === "En cours" && (
-                          <span style={{
-                            fontSize: 10,
-                            padding: "2px 6px",
-                            borderRadius: 100,
-                            background: "var(--amber-soft)",
-                            color: "var(--amber)",
-                            fontWeight: 600,
-                          }}>
-                            En cours
-                          </span>
+                          <button
+                            onClick={() => handleToggle(section)}
+                            disabled={updatingIds.has(section.id)}
+                            style={{
+                              flex: 1, display: "flex", alignItems: "center",
+                              gap: 12, padding: "12px 16px", textAlign: "left",
+                              background: "transparent",
+                            }}
+                          >
+                            <span style={{
+                              fontSize: 16, flexShrink: 0, transition: "color 0.2s",
+                              color: section.statut === "Terminé" ? color : "var(--text-muted)",
+                            }}>
+                              {STATUT_ICONS[section.statut] ?? "○"}
+                            </span>
+                            <span style={{
+                              fontSize: 14, flex: 1, transition: "all 0.2s",
+                              textDecoration: section.statut === "Terminé" ? "line-through" : "none",
+                              color: section.statut === "Terminé" ? "var(--text-muted)" : "var(--text)",
+                            }}>
+                              {section.titre}
+                            </span>
+                            {section.statut === "En cours" && (
+                              <span style={{
+                                fontSize: 10, padding: "2px 6px", borderRadius: 100,
+                                background: "var(--amber-soft)", color: "var(--amber)", fontWeight: 600,
+                              }}>
+                                En cours
+                              </span>
+                            )}
+                          </button>
+
+                          {/* Bouton note */}
+                          <button
+                            onClick={() => openNoteId === section.id ? closeNote() : openNote(section)}
+                            title={section.note ? "Modifier la note" : "Ajouter une note"}
+                            style={{
+                              fontSize: 13, background: "none", border: "none",
+                              cursor: "pointer", padding: "0 12px 0 4px", flexShrink: 0,
+                              opacity: section.note ? 1 : 0.3,
+                              color: section.note ? "var(--accent)" : "var(--text-muted)",
+                              transition: "opacity 0.2s",
+                            }}
+                          >
+                            📝
+                          </button>
+                        </div>
+
+                        {/* Éditeur de note inline */}
+                        {openNoteId === section.id && (
+                          <div
+                            style={{
+                              padding: "10px 16px 12px",
+                              borderTop: "1px solid var(--border)",
+                              background: "var(--bg)",
+                            }}
+                            onClick={(e) => e.stopPropagation()}
+                          >
+                            <textarea
+                              autoFocus
+                              value={noteText}
+                              onChange={(e) => setNoteText(e.target.value)}
+                              rows={3}
+                              placeholder="Ta note..."
+                              style={{
+                                width: "100%", background: "var(--bg-card)",
+                                border: "1px solid var(--border)", borderRadius: "var(--radius-sm)",
+                                color: "var(--text)", fontSize: 13, padding: "8px 10px",
+                                resize: "vertical", fontFamily: "inherit", boxSizing: "border-box",
+                              }}
+                            />
+                            <div style={{ display: "flex", gap: 8, marginTop: 8 }}>
+                              <button
+                                onClick={() => saveNote(section.id)}
+                                disabled={savingNote}
+                                style={{
+                                  fontSize: 12, fontWeight: 600, padding: "5px 12px",
+                                  borderRadius: "var(--radius-sm)", border: "none",
+                                  background: "var(--accent)", color: "#fff",
+                                  cursor: "pointer", opacity: savingNote ? 0.6 : 1,
+                                }}
+                              >
+                                {savingNote ? "..." : "Sauvegarder"}
+                              </button>
+                              <button
+                                onClick={closeNote}
+                                style={{
+                                  fontSize: 12, padding: "5px 12px",
+                                  borderRadius: "var(--radius-sm)", border: "1px solid var(--border)",
+                                  background: "none", color: "var(--text-muted)", cursor: "pointer",
+                                }}
+                              >
+                                Annuler
+                              </button>
+                            </div>
+                          </div>
                         )}
-                      </button>
+                      </div>
                     ))}
                   </div>
                 )}
@@ -254,7 +301,6 @@ export default function Bible() {
             );
           })}
 
-          {/* Note */}
           {!loading && sections.length > 0 && (
             <p style={{ fontSize: 12, color: "var(--text-dim)", textAlign: "center", marginTop: 24, lineHeight: 1.6 }}>
               Tap sur une section pour changer son statut.<br />
