@@ -23,7 +23,7 @@ export default async function handler(req, res) {
 
     const sections = response.results.map((page) => ({
       id:     page.id,
-      titre:  page.properties["Nom"]?.title?.[0]?.plain_text ?? "Sans titre",
+      titre:  page.properties["Section"]?.title?.[0]?.plain_text ?? "Sans titre",
       phase:  page.properties["Phase"]?.select?.name ?? "Autre",
       statut: page.properties["Statut"]?.select?.name ?? "À faire",
     }));
