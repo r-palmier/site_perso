@@ -6,6 +6,10 @@ import { Client } from "@notionhq/client";
 const notion = new Client({ auth: process.env.NOTION_TOKEN });
 const DATABASE_ID = process.env.NOTION_DATABASE_ID;
 
+console.log("Token:", process.env.NOTION_TOKEN ? "✓ présent" : "✗ manquant");
+console.log("Database ID:", DATABASE_ID);
+console.log("notion.databases:", typeof notion.databases);
+
 export default async function handler(req, res) {
   if (req.method !== "GET") {
     return res.status(405).json({ error: "Method not allowed" });
